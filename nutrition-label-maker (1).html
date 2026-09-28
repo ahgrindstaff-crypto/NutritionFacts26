@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nutrition Label Maker</title>
+<style>
+  :root{
+    --bench:#E7EAE3; --panel:#FFFFFF; --ink:#1C201C; --soft:#5B635B;
+    --line:#CBD1C8; --green:#2F6E4F; --green-d:#245740; --amber:#A8691A;
+    --kraft:#C8A273;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{background:var(--bench);color:var(--ink);
+    font:15px/1.45 "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif}
+  header{padding:18px 22px 8px;max-width:1180px;margin:0 auto}
+  h1{margin:0;font:800 26px/1.1 "Helvetica Neue", Arial, sans-serif;letter-spacing:-.01em}
+  header p{margin:4px 0 0;color:var(--soft);max-width:62ch}
+  main{max-width:1180px;margin:0 auto;padding:10px 22px 24px;
+    display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:22px;align-items:start}
+  @media (max-width:860px){main{grid-template-columns:1fr}}
+  form{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px 18px}
+  fieldset{border:0;margin:0 0 14px;padding:0}
+  legend{font-weight:700;font-size:16px;margin-bottom:6px;padding:0}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:8px 14px}
+  label{display:block;font-size:13px;color:var(--soft)}
+  .field input{width:100%;margin-top:2px;padding:7px 9px;font:inherit;color:var(--ink);
+    border:1px solid var(--line);border-radius:6px;background:#FBFCFA}
+  .unit{position:relative}
+  .unit input{padding-right:40px}
+  .unit span{position:absolute;right:9px;top:50%;transform:translateY(-50%);
+    color:var(--soft);font-size:13px;pointer-events:none}
+  .sub label{padding-left:12px;border-left:2px solid var(--line)}
+  input:focus-visible,button:focus-visible{outline:3px solid #7FB89A;outline-offset:1px}
+  .side{position:sticky;top:12px}
+  .board{background:var(--kraft);
+    background-image:repeating-linear-gradient(90deg,rgba(0,0,0,.035) 0 2px,transparent 2px 7px);
+    border-radius:10px;padding:18px;display:flex;justify-content:center}
+  #preview svg{display:block;width:100%;max-width:300px;height:auto;
+    box-shadow:0 2px 0 rgba(0,0,0,.18)}
+  .actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+  button{font:inherit;font-weight:600;border-radius:6px;padding:8px 14px;cursor:pointer;
+    border:1px solid var(--line);background:var(--panel);color:var(--ink)}
+  button.primary{background:var(--green);border-color:var(--green);color:#fff}
+  button.primary:hover{background:var(--green-d)}
+  .check{display:flex;gap:6px;align-items:center;margin-top:10px;font-size:14px;color:var(--ink)}
+  #notes{margin-top:12px;font-size:14px}
+  #notes p{margin:0 0 6px;padding:6px 10px;background:#FFF;border-left:4px solid var(--amber);border-radius:4px}
+  #notes p.ok{border-left-color:var(--green)}
+  .tools{display:flex;gap:8px;margin-top:4px}
+  footer{max-width:1180px;margin:0 auto;padding:0 22px 22px;color:var(--soft);font-size:13px}
+</style>
+</head>
+<body>
+<header>
+  <h1>Nutrition Label Maker</h1>
+  <p>Type in your product's numbers. The label builds itself as you go. When it looks right, download it and put it on your package design.</p>
+</header>
+
+<main>
+  <form id="f" autocomplete="off" onsubmit="return false">
+    <fieldset>
+      <legend>Your product</legend>
+      <div class="grid">
+        <div class="field"><label for="name">Product name (for the file name)</label><input id="name" type="text" maxlength="40" placeholder="Crunch Bites"></div>
+        <div class="field"><label for="servings">Servings per container</label><input id="servings" type="text" maxlength="12" placeholder="8"></div>
+        <div class="field"><label for="size">Serving size</label><input id="size" type="text" maxlength="30" placeholder="2/3 cup (55g)"></div>
+        <div class="field"><label for="cal">Calories</label><div class="unit"><input id="cal" type="number" min="0" step="any" inputmode="decimal" placeholder="0"></div></div>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Nutrients (per serving)</legend>
+      <div class="grid" id="nutrients"></div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Vitamins and minerals</legend>
+      <div class="grid" id="vitamins"></div>
+    </fieldset>
+
+    <div class="tools">
+      <button type="button" id="sample">Try a sample</button>
+      <button type="button" id="clear">Clear all</button>
+    </div>
+  </form>
+
+  <aside class="side">
+    <div class="board"><div id="preview" aria-live="polite"></div></div>
+    <div class="actions">
+      <button type="button" class="primary" id="png">Download PNG</button>
+      <button type="button" id="svgBtn">Download SVG</button>
+    </div>
+    <label class="check"><input type="checkbox" id="clearBg"> Transparent background (PNG)</label>
+    <div id="notes"></div>
+  </aside>
+</main>
+
+<footer>Works offline. No sign-in. Nothing you type leaves this page.</footer>
+
+<script>
+(function(){
+  // FDA daily values used for %DV (2,000-calorie diet)
+  const NUTRIENTS = [
+    {id:'fat',   label:'Total Fat',          unit:'g',  dv:78,   bold:true},
+    {id:'sat',   label:'Saturated Fat',      unit:'g',  dv:20,   indent:1},
+    {id:'trans', label:'Trans Fat',          unit:'g',  dv:null, indent:1, trans:true},
+    {id:'chol',  label:'Cholesterol',        unit:'mg', dv:300,  bold:true},
+    {id:'sod',   label:'Sodium',             unit:'mg', dv:2300, bold:true},
+    {id:'carb',  label:'Total Carbohydrate', unit:'g',  dv:275,  bold:true},
+    {id:'fiber', label:'Dietary Fiber',      unit:'g',  dv:28,   indent:1},
+    {id:'sugar', label:'Total Sugars',       unit:'g',  dv:null, indent:1},
+    {id:'added', label:'Added Sugars',       unit:'g',  dv:50,   indent:2, added:true},
+    {id:'prot',  label:'Protein',            unit:'g',  dv:null, bold:true}
+  ];
+  const VITAMINS = [
+    {id:'vitd', label:'Vitamin D', unit:'mcg', dv:20},
+    {id:'calc', label:'Calcium',   unit:'mg',  dv:1300},
+    {id:'iron', label:'Iron',      unit:'mg',  dv:18},
+    {id:'pot',  label:'Potassium', unit:'mg',  dv:4700}
+  ];
+  const SAMPLE = {name:'Crunch Bites', servings:'8', size:'2/3 cup (55g)', cal:230,
+    fat:8, sat:1, trans:0, chol:0, sod:160, carb:37, fiber:4, sugar:12, added:10, prot:3,
+    vitd:2, calc:260, iron:8, pot:240};
+
+  const $ = id => document.getElementById(id);
+
+  function makeFields(list, host){
+    list.forEach(n => {
+      const wrap = document.createElement('div');
+      wrap.className = 'field' + (n.indent ? ' sub' : '');
+      const shown = n.added ? 'Added Sugars' : n.label;
+      wrap.innerHTML = '<label for="'+n.id+'">'+shown+'</label>' +
+        '<div class="unit"><input id="'+n.id+'" type="number" min="0" step="any" inputmode="decimal" placeholder="0"><span>'+n.unit+'</span></div>';
+      host.appendChild(wrap);
+    });
+  }
+  makeFields(NUTRIENTS, $('nutrients'));
+  makeFields(VITAMINS, $('vitamins'));
+
+  const num = id => { const v = parseFloat($(id).value); return isFinite(v) && v > 0 ? v : 0; };
+  const fmt = v => Number.isInteger(v) ? String(v) : String(Math.round(v*10)/10);
+  const pct = (v, dv) => Math.round(v / dv * 100) + '%';
+  const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+  // text measuring so long serving sizes and the footnote wrap correctly
+  const mctx = document.createElement('canvas').getContext('2d');
+  const FONT = 'Helvetica Neue, Helvetica, Arial, sans-serif';
+  const measure = (s, size, weight) => { mctx.font = weight+' '+size+'px '+FONT; return mctx.measureText(s).width; };
+
+  let lastSize = {w:0, h:0};
+
+  function buildSVG(transparent){
+    const PAD = 7, W = 280, X0 = PAD, X1 = PAD + W;
+    let y = PAD;
+    const el = [];
+    const txt = (x, yy, s, size, weight, anchor) =>
+      el.push('<text x="'+x+'" y="'+yy+'" font-size="'+size+'" font-weight="'+(weight||400)+'"'+(anchor?' text-anchor="'+anchor+'"':'')+'>'+esc(s)+'</text>');
+    const bar = (h, x) => { const sx = x || X0; el.push('<rect x="'+sx+'" y="'+y+'" width="'+(X1-sx)+'" height="'+h+'" fill="#000"/>'); y += h; };
+
+    // Title
+    y += 31;
+    el.push('<text x="'+X0+'" y="'+y+'" font-size="36" font-weight="900" textLength="'+W+'" lengthAdjust="spacingAndGlyphs">Nutrition Facts</text>');
+    y += 5; bar(1);
+
+    // Servings
+    const sv = $('servings').value.trim() || '0';
+    y += 14; txt(X0, y, sv + (sv === '1' ? ' serving' : ' servings') + ' per container', 12.5);
+    const size = $('size').value.trim() || '—';
+    const left = measure('Serving size', 15, 700), right = measure(size, 15, 700);
+    y += 18; txt(X0, y, 'Serving size', 15, 700);
+    if (left + right + 12 > W) { y += 17; }
+    txt(X1, y, size, 15, 700, 'end');
+    y += 5; bar(10);
+
+    // Calories
+    y += 12; txt(X0, y, 'Amount per serving', 10.5, 700);
+    y += 27; txt(X0, y, 'Calories', 30, 900);
+    txt(X1, y, fmt(Math.round(num('cal'))), 38, 900, 'end');
+    y += 5; bar(5);
+    y += 13; txt(X1, y, '% Daily Value*', 10.5, 700, 'end');
+    y += 3;
+
+    // Nutrient rows
+    NUTRIENTS.forEach(n => {
+      const ix = X0 + (n.indent || 0) * 13;
+      bar(0.8, ix);
+      const base = y + 12.5;
+      const v = num(n.id), amt = fmt(v) + n.unit;
+      let inner;
+      if (n.trans) inner = '<tspan font-style="italic">Trans</tspan> Fat ' + esc(amt);
+      else if (n.added) inner = 'Includes ' + esc(amt) + ' Added Sugars';
+      else if (n.bold) inner = '<tspan font-weight="700">' + esc(n.label) + '</tspan> ' + esc(amt);
+      else inner = esc(n.label) + ' ' + esc(amt);
+      el.push('<text x="'+ix+'" y="'+base+'" font-size="12.5">'+inner+'</text>');
+      if (n.dv) txt(X1, base, pct(v, n.dv), 12.5, 700, 'end');
+      y += 17;
+    });
+    bar(10);
+
+    // Vitamins
+    VITAMINS.forEach((n, i) => {
+      if (i > 0) bar(0.8);
+      const base = y + 12.5, v = num(n.id);
+      txt(X0, base, n.label + ' ' + fmt(v) + n.unit, 12.5);
+      txt(X1, base, pct(v, n.dv), 12.5, 400, 'end');
+      y += 17;
+    });
+    bar(5);
+
+    // Footnote
+    const note = '* The % Daily Value (DV) tells you how much a nutrient in a serving of food contributes to a daily diet. 2,000 calories a day is used for general nutrition advice.';
+    const words = note.split(' ');
+    let line = ''; y += 3;
+    words.forEach(w => {
+      const test = line ? line + ' ' + w : w;
+      if (measure(test, 9.5, 400) > W && line) { y += 11.5; txt(X0, y, line, 9.5); line = w; }
+      else line = test;
+    });
+    y += 11.5; txt(X0, y, line, 9.5);
+
+    const H = Math.ceil(y + PAD + 2), TW = W + PAD * 2;
+    lastSize = {w:TW, h:H};
+    return '<svg xmlns="http://www.w3.org/2000/svg" width="'+TW+'" height="'+H+'" viewBox="0 0 '+TW+' '+H+'" font-family="'+FONT+'" fill="#000">' +
+      (transparent ? '' : '<rect width="'+TW+'" height="'+H+'" fill="#fff"/>') +
+      '<rect x="0.75" y="0.75" width="'+(TW-1.5)+'" height="'+(H-1.5)+'" fill="none" stroke="#000" stroke-width="1.5"/>' +
+      el.join('') + '</svg>';
+  }
+
+  // Reality checks — like a real food scientist would do
+  function checkNumbers(){
+    const out = [];
+    const fat = num('fat'), carb = num('carb'), prot = num('prot'), cal = num('cal');
+    if (num('sat') + num('trans') > fat) out.push('Saturated fat plus trans fat can\'t be more than Total Fat.');
+    if (num('fiber') + num('sugar') > carb) out.push('Fiber and sugars are part of Total Carbohydrate, so together they can\'t be more than it.');
+    if (num('added') > num('sugar')) out.push('Added sugars are part of Total Sugars, so they can\'t be bigger.');
+    const est = Math.round(fat * 9 + carb * 4 + prot * 4);
+    if (cal > 0 && est > 0 && Math.abs(cal - est) > Math.max(20, est * 0.2))
+      out.push('Your fat, carbs, and protein add up to about ' + est + ' calories, but you entered ' + Math.round(cal) + '. Fat has 9 calories per gram. Carbs and protein have 4. Real labels land close.');
+    const box = $('notes');
+    if (out.length) box.innerHTML = out.map(s => '<p>' + esc(s) + '</p>').join('');
+    else if (cal > 0 && est > 0) box.innerHTML = '<p class="ok">Your numbers check out.</p>';
+    else box.innerHTML = '';
+  }
+
+  function render(){ $('preview').innerHTML = buildSVG(false); checkNumbers(); }
+
+  function fileName(){
+    const n = $('name').value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    return (n || 'product') + '-nutrition-label';
+  }
+  function save(blob, name){
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  }
+
+  $('png').addEventListener('click', () => {
+    const transparent = $('clearBg').checked;
+    const svg = buildSVG(transparent);
+    const {w, h} = lastSize, scale = 4;
+    const img = new Image();
+    img.onload = () => {
+      const c = document.createElement('canvas');
+      c.width = w * scale; c.height = h * scale;
+      const ctx = c.getContext('2d');
+      if (!transparent) { ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height); }
+      ctx.drawImage(img, 0, 0, c.width, c.height);
+      c.toBlob(b => save(b, fileName() + '.png'), 'image/png');
+    };
+    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+  });
+
+  $('svgBtn').addEventListener('click', () => {
+    save(new Blob([buildSVG($('clearBg').checked)], {type:'image/svg+xml'}), fileName() + '.svg');
+  });
+
+  $('sample').addEventListener('click', () => {
+    Object.keys(SAMPLE).forEach(k => { $(k).value = SAMPLE[k]; });
+    render();
+  });
+  $('clear').addEventListener('click', () => {
+    document.querySelectorAll('#f input').forEach(i => { i.value = ''; });
+    render();
+  });
+
+  $('f').addEventListener('input', render);
+  render();
+})();
+</script>
+</body>
+</html>
